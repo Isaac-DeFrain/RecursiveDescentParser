@@ -2,7 +2,7 @@
 
 object Tests extends App {
 
-  val patterns = List("abc", "(abc)", "a?b", "ab?", "(a|b)c?", "I (like|love|hate) (cat|dog)? people", "((h|j)ell. worl?d)|(42)")
+  val patterns = List("abc", "(abc)", "a?b", "ab?", "(a|b)c?", "I (like|love|hate)( (cat|dog))? people", "((h|j)ell. worl?d)|(42)")
   val strings  = List(
     List("abc", "ab", "ac", "bc", "a", "b", "c"),
     List("abc", "b", "c", "ab", "bc", "ac", "a"),

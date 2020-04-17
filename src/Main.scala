@@ -1,11 +1,10 @@
 import scala.io.StdIn.readLine
 import scala.util.matching.Regex
 
-// Tree class for descent parsing:
 /*
 Grammar without left recursion:
 S  -: E$
-E  -: T E2     -- expression
+E  -: T E2
 E2 -: '|' E3   -- alternative
 E2 -: NIL      -- alternative
 E3 -: T E2
@@ -20,31 +19,37 @@ A  -: '(' A2
 A2 -: E ')'
 */
 
-// no environment is required because we are not assigning values to variables
-
 // Two steps:
 // 1. Create pattern AST
-// 2. For each input string, check if it matches the pattern AST
+// 2. For each input string, check if its AST matches the pattern's AST
 
 abstract class S {
   def matches(input: S): Boolean
 }
 // right.isDefined == true if alternative
+// E2: Some => match left or right.get.left.left
+// E2: None => no other alternatives
+// E3: an alternative to potentially match
 case class E(left: T, right: Option[E2]) extends S {
   def matches(input: S): Boolean = {
     if (right.isEmpty) {
-      // Not an ALTERNATIVE
+      // No ALTERNATIVES -- must match left
       input match {
         case E(t,None) => left.matches(t)
+        case t: T2 => left.matches(t)
+        case t: T => left.matches(t)
+        case F(a,None) => left.matches(a)
+        case a: A => left.matches(a)
         case _ => false
       }
     } else {
-      // ALTERNATIVE
+      // ALTERNATIVES exist -- must match one of them
       input match {
-        case E(t,Some(e2)) =>
-          left.matches(t) || right.get.left.left.left.matches(t.left) ||
-            right.get.matches(e2) || right.get.left.left.matches(t)
-        case E(t,None) => left.matches(t) || right.get.left.left.left.matches(t.left)
+        case E(t,None) => left.matches(t) || right.get.left.matches(t)
+        case t: T2 => left.matches(t) || right.get.left.matches(t)
+        case t: T => left.matches(t) || right.get.left.matches(t)
+        case F(a,None) => left.matches(a) || right.get.left.matches(a)
+        case a: A => left.matches(a) || right.get.left.matches(a)
         case _ => false
       }
     }
@@ -53,142 +58,243 @@ case class E(left: T, right: Option[E2]) extends S {
 // Alternative branch
 case class E2(left: E3) extends S {
   def matches(input: S): Boolean = input match {
-    case E2(e3)    => left.matches(e3)
     case E(t,None) => left.matches(t)
-    case t: T      => left.matches(t)
-    case _         => false
+    case t: T2 => left.matches(t)
+    case t: T => left.matches(t)
+    case F(a,None) => left.matches(a)
+    case a: A => left.matches(a)
+    case _ => false
   }
 }
 // nested within alternative
 case class E3(left: T, right: Option[E2]) extends S {
   def matches(input: S): Boolean = {
-    if (right.isEmpty)
-    input match {
-      case E3(t,None) => left.matches(t)
-      case t: T => left.matches(t)
-      case _ => false
-    } else {
+    if (right.isEmpty) {
+      // No ALTERNATIVES -- must match left
       input match {
-        case E3(t,None) => left.matches(t) || right.get.matches(t)
-        case t: T => left.matches(t) || right.get.matches(t)
+        case E(t,None) => left.matches(t)
+        case t: T2 => left.matches(t)
+        case t: T => left.matches(t)
+        case F(a,None) => left.matches(a)
+        case a: A => left.matches(a)
+        case _ => false
+      }
+    } else {
+      // ALTERNATIVES exist -- only need to match one of them
+      input match {
+        case E(t,None) => left.matches(t) || right.get.left.matches(t)
+        case t: T2 => left.matches(t) || right.get.left.matches(t)
+        case t: T => left.matches(t) || right.get.left.matches(t)
+        case F(a,None) => left.matches(a) || right.get.left.matches(a)
+        case a: A => left.matches(a) || right.get.left.matches(a)
         case _ => false
       }
     }
   }
 }
 // several terms if right.isDefined
+// may be part of a nested expression so we need to match simpler expressions
+// T2: Some => must match iff left.right.isEmpty (i.e. the F is not optional)
+//             otherwise matching is optional
+// T2: None => no more characters to match
 case class T(left: F, right: Option[T2]) extends S {
   def matches(input: S): Boolean = {
-    if (right.isEmpty) {
-      // only one term, more than one can match on left
+    val thisT2 = T2(left, right)
+    if (right.isEmpty) { // only left
       input match {
-        case T(f,None) => left.matches(f)
-        case t: T => left.left.matches(t)
+        case t: T2 => left.matches(t)
+        case t: T => left.matches(t)
+        case F(a, None) => left.matches(a)
+        case a: A => left.matches(a)
         case _ => false
       }
-    } else {
-      // several terms
-      if (left.right.isEmpty) {
-        // left is not optional
-        input match {
-          // several chars, some may be optional
-          case T(f,Some(t2)) => left.matches(f) && right.get.matches(t2)
-          case _ => false
-        }
-      } else {
-        if (right.get.right.isEmpty) {
-          input match { //TODO
-            // right is optional
-            case x@T(f, Some(t2)) => (left.matches(f) && right.get.matches(t2)) || (!right.get.matches(t2) && left.matches(x))
-            case T(f, None) => left.matches(f)
+    } else { // several terms (may be optional or required)
+      if (left.right.isEmpty) { // left is required
+        if (right.get.required) { // something in right is required
+          input match {
+            case t@T2(_, Some(_)) => thisT2.traverseMatch(None, Some(t))
+            case t@T(_, Some(_)) => thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
             case _ => false
           }
-        } else {
-          // left is optional, right is also optional
-          if (right.get.left.right.isEmpty) {
-            input match { //TODO
-              // several chars, some may be optional though
-              case x@T(f, Some(t2)) => (left.matches(f) && right.get.matches(t2)) || (!left.matches(f) && right.get.matches(x))
-              case T(f, None) => right.get.left.matches(f)
-              case _ => false
-            }
-          } else {
-            // left is optional, right is not optional
-            input match {
-              // several chars, some may be optional though
-              case x@T(f, Some(t2)) => (left.matches(f) && right.get.matches(t2)) || (!left.matches(f) && right.get.matches(x))
-              case T(f, None) => right.get.left.matches(f)
-              case _ => false
-            }
+        } else { // left is required, right terms are all optional
+          input match {
+            case t@T2(f, Some(t2)) =>
+              left.matches(t) || thisT2.traverseMatch(None, Some(t))
+            case t@T(f, Some(t2)) =>
+              left.matches(t) || thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
+            case T2(f, None) => left.matches(f)
+            case T(f, None) => left.matches(f)
+            case F(a, None) => left.matches(a)
+            case a: A => left.matches(a)
+            case _ => false
+          }
+        }
+      } else { // left is optional
+        if (right.get.required) { // something in right is required
+          input match {
+            case t@T2(f, Some(t2)) =>
+              right.get.matches(t) || thisT2.traverseMatch(None, Some(t))
+            case t@T(f, Some(t2)) =>
+              right.get.matches(t) || thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
+            case T2(f, None) => right.get.matches(f)
+            case T(f, None) => right.get.matches(f)
+            case F(a, None) => right.get.matches(a)
+            case a: A => right.get.matches(a)
+            case _ => false
+          }
+        } else { // left is optional, everything in right is optional
+          input match {
+            case t@T2(f, Some(t2)) =>
+              left.matches(t) || right.get.matches(t) || thisT2.traverseMatch(None, Some(t))
+            case t@T(f, Some(t2)) =>
+              left.matches(t) || right.get.matches(t) || thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
+            case T2(f, None) => left.matches(f) || right.get.matches(f)
+            case T(f, None) => left.matches(f) || right.get.matches(f)
+            case F(a, None) => left.matches(a) || right.get.matches(a)
+            case a: A => left.matches(a) || right.get.matches(a)
+            case _ => false
           }
         }
       }
     }
   }
+  def push(t2: T2): Option[T2] = this match {
+    case T(f, None) => Some(T2(f, Some(t2)))
+    case T(f, Some(t)) => Some(T2(f, Some(t.push(t2))))
+  }
 }
 case class T2(left: F, right: Option[T2]) extends S {
   def matches(input: S): Boolean = {
-    if (right.isEmpty) {
+    if (right.isEmpty) { // only left
       input match {
-        case T2(f,None) => left.matches(f)
+        case t: T2 => left.matches(t)
+        case t: T => left.matches(t)
+        case F(a, None) => left.matches(a)
+        case a: A => left.matches(a)
+        case _ => false
+      }
+    } else { // several terms (may be optional or required)
+      if (left.right.isEmpty) { // left is required
+        if (right.get.required) { // something in right is required
+          input match {
+            case t@T2(_, Some(_)) => this.traverseMatch(None, Some(t))
+            case t@T(_, Some(_)) => this.traverseMatch(None, Some(T2(t.left, t.right)))
+            case _ => false
+          }
+        } else { // left is required, right terms are all optional
+          input match {
+            case t@T2(f, Some(t2)) =>
+              left.matches(t) || this.traverseMatch(None, Some(t))
+            case t@T(f, Some(t2)) =>
+              left.matches(t) || this.traverseMatch(None, Some(T2(t.left, t.right)))
+            case T2(f, None) => left.matches(f)
+            case T(f, None) => left.matches(f)
+            case F(a, None) => left.matches(a)
+            case a: A => left.matches(a)
+            case _ => false
+          }
+        }
+      } else { // left is optional
+        if (right.get.required) { // something in right is required
+          input match {
+            case t@T2(f, Some(t2)) =>
+              right.get.matches(t) || this.traverseMatch(None, Some(t))
+            case t@T(f, Some(t2)) =>
+              right.get.matches(t) || this.traverseMatch(None, Some(T2(t.left, t.right)))
+            case T2(f, None) => right.get.matches(f)
+            case T(f, None) => right.get.matches(f)
+            case F(a, None) => right.get.matches(a)
+            case a: A => right.get.matches(a)
+            case _ => false
+          }
+        } else { // left is optional, everything in right is optional
+          input match {
+            case t@T2(f, Some(t2)) =>
+              left.matches(t) || right.get.matches(t) || this.traverseMatch(None, Some(t))
+            case t@T(f, Some(t2)) =>
+              left.matches(t) || right.get.matches(t) || this.traverseMatch(None, Some(T2(t.left, t.right)))
+            case T2(f, None) => left.matches(f) || right.get.matches(f)
+            case T(f, None) => left.matches(f) || right.get.matches(f)
+            case F(a, None) => left.matches(a) || right.get.matches(a)
+            case a: A => left.matches(a) || right.get.matches(a)
+            case _ => false
+          }
+        }
+      }
+    }
+  }
+  def required: Boolean = this match {
+    case T2(f, Some(t2)) => f.right.isEmpty || t2.required
+    case T2(f, None) => f.right.isEmpty
+  }
+  def push(t2: T2): T2 = this match {
+    case T2(f, None) => T2(f, Some(t2))
+    case T2(f, Some(t)) => T2(f, Some(t.push(t2)))
+  }
+  // *horrible* several character traversal
+  def traverseMatch(prev: Option[T2], t2opt: Option[T2]): Boolean = {
+    val newLeft = T2(left, None)
+    if (prev.isEmpty) { // first pass
+      t2opt match { // t2opt is Some
+        case Some(T2(f1, Some(T2(f, None)))) =>
+          newLeft.matches(T2(f1, None)) && right.get.matches(f)
+        case Some(T2(f1, t)) =>
+          val newPrev = Some(T2(f1, None))
+          newLeft.matches(newPrev.get) && right.get.matches(t.get) ||
+            this.traverseMatch(newPrev, t)
         case _ => false
       }
     } else {
-      input match {
-        case T2(f,Some(t2)) => left.matches(f) && right.get.matches(t2)
-        case T2(f,None) => left.matches(f) && right.get.left.matches(f) //TODO
+      t2opt match { // next passes
+        case Some(T2(f1, Some(T2(f, None)))) => // last possible check
+          val current = prev.get.push(T2(f1, None))
+          val t = T2(f, None)
+          newLeft.matches(current) && right.get.matches(t)
+        case Some(T2(f1, Some(T2(f, t2)))) => // might need more checks
+          val current = Some(prev.get.push(T2(f1, None)))
+          val t = Some(T2(f, t2))
+          newLeft.matches(current.get) && right.get.matches(t.get) ||
+            this.traverseMatch(current, t)
         case _ => false
       }
     }
   }
 }
 // right.isDefined == true if optional
+// F2: None => left is required
+// F2: Some => left is optional
 case class F(left: A, right: Option[F2]) extends S {
   def matches(input: S): Boolean = {
-    if (right.isEmpty) {
-      // left is not optional
-      input match {
-        case F(a,None) => left.matches(a)
-        case _ => false
-      }
-    } else {
-      // A is OPTIONAL => it doesn't need to be matched
-      input match {
-        case F(a,Some(f2)) => left.matches(a) && right.get.matches(f2)
-        case F(a,None) => left.matches(a)
-        case _ => false
-      }
+    input match {
+      case F(a, None) => left.matches(a)
+      case t: T2 => left.matches(t)
+      case t: T => left.matches(t)
+      case a: A => left.matches(a)
+      case _ => false
     }
   }
 }
-// optional
+// OPTIONAL -- nothing ever checks this
 case class F2(left: Option[F2]) extends S {
-  def matches(input: S): Boolean = input match {
-    case F2(None)     => left.isEmpty
-    case F2(Some(f2)) => left.get.matches(f2)
-    case _            => true
-  }
+  def matches(input: S): Boolean = false
 }
 abstract class A extends S
 case class C(left: String) extends A {
   def matches(input: S): Boolean = input match {
-    case C(c) => left == c
-    case _    => false
+    case T2(f,None) => this.matches(f)
+    case T(f,None) => this.matches(f)
+    case F(a,None) => this.matches(a)
+    case C(c) => left == "." || left == c
+    case _ => false
   }
 }
 // Parentheses
-// E(T, Option[E2])
-case class A2(left: E) extends A { //FIXME
+case class A2(left: E) extends A {
   def matches(input: S): Boolean = input match {
-//    case c: C  => {
-//      if (left.right.isEmpty) {
-//        left.left.left.left.matches(c)
-//      } else {
-//        left.left.left.left.matches(c) || left.right.get.left.left.left.left.matches(c)
-//      }
-//    }
-    case A2(e) => left.matches(e)
-    case t: T =>left.left.matches(t)
+    case t: T2 => left.matches(t)
+    case t: T => left.matches(t)
+    case f: F => left.matches(f)
+    case a: A => left.matches(a)
     case _ => false
   }
 }
@@ -198,15 +304,13 @@ class RecursiveDescentParser(input: String) {
   var index: Int = 0
   val charsRegex: Regex = "^[0-9a-zA-Z. ]".r
 
-  // Parsing
-  // S - top level
+  // S -: E $
   def parseS(): S = parseE()
 
-  // E(T, Option[E2])
+  // E -: T E2
   def parseE(): E = E(parseT(), parseE2())
 
-  // Alternation - |
-  // E2(E3)
+  // E2 -: '|' E2
   def parseE2(): Option[E2] = {
     if (index < input.length && input(index) == '|') {
       index += 1
@@ -214,13 +318,14 @@ class RecursiveDescentParser(input: String) {
     } else None
   }
 
-  // E3(T, E2)
+  // E3 -: T E2
   def parseE3(): E3 = E3(parseT(), parseE2())
 
-  // T(F, Option[T2])
+  // T -: F T2
   def parseT(): T = T(parseF(), parseT2())
 
-  // T2(F, Option[T2])
+  // T2 -: F T2
+  // T2 -: NIL
   def parseT2(): Option[T2] = {
     if (index < input.length &&
       (input(index) == '(' || input(index).isLetterOrDigit || input(index) == ' ' || input(index) == '.')) {
@@ -228,7 +333,7 @@ class RecursiveDescentParser(input: String) {
     } else None
   }
 
-  // F(A, Option[F2])
+  // F -: A F2
   def parseF(): F = {
     if (index < input.length && input(index) == '(') {
       // if A is char, then don't increment
@@ -237,8 +342,8 @@ class RecursiveDescentParser(input: String) {
     } else F(parseA(), parseF2())
   }
 
-  // Optional - ?
-  // F2(Option[F2])
+  // F2 -: '?' F2
+  // F2 -: NIL
   def parseF2(): Option[F2] = {
     if (index < input.length && input(index) == '?') {
       index += 1
@@ -251,7 +356,7 @@ class RecursiveDescentParser(input: String) {
     parseF2()
   }
 
-  // A -: ( A2
+  // A -: '(' A2
   // A -: C
   def parseA(): A = {
     if (input(index) == '(') {
@@ -266,13 +371,13 @@ class RecursiveDescentParser(input: String) {
     }
   }
 
-  // A2(E)
+  // A2 -: E ')'
   def parseA2(): A2 = A2(parseE())
 }
 
 object Main {
   def main(args: Array[String]): Unit = {
-    println("Please enter a pattern.")
+    println("Enter a pattern (if you dare)")
     println()
     val patternInput = readLine("pattern? ")
     val patternParser = new RecursiveDescentParser(patternInput)
@@ -280,7 +385,7 @@ object Main {
     println(pattern)
     var stringInput = readLine("string? ")
 
-    while (stringInput != "(end)" && stringInput != "(exit)") {
+    while (stringInput != "/") {
       if (stringInput.isEmpty) {
         println("no match")
         stringInput = readLine("string? ")
