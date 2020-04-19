@@ -19,10 +19,6 @@ A  -: '(' A2
 A2 -: E ')'
 */
 
-// Two steps:
-// 1. Create pattern AST
-// 2. For each input string, check if its AST matches the pattern's AST
-
 abstract class S {
   def matches(input: S): Boolean
 }
