@@ -118,9 +118,9 @@ case class T(left: F, right: Option[T2]) extends S {
           }
         } else { // left is required, right terms are all optional
           input match {
-            case t@T2(f, Some(t2)) =>
+            case t@T2(_, Some(_)) =>
               left.matches(t) || thisT2.traverseMatch(None, Some(t))
-            case t@T(f, Some(t2)) =>
+            case t@T(_, Some(_)) =>
               left.matches(t) || thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
             case T2(f, None) => left.matches(f)
             case T(f, None) => left.matches(f)
@@ -132,9 +132,9 @@ case class T(left: F, right: Option[T2]) extends S {
       } else { // left is optional
         if (right.get.required) { // something in right is required
           input match {
-            case t@T2(f, Some(t2)) =>
+            case t@T2(_, Some(_)) =>
               right.get.matches(t) || thisT2.traverseMatch(None, Some(t))
-            case t@T(f, Some(t2)) =>
+            case t@T(_, Some(_)) =>
               right.get.matches(t) || thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
             case T2(f, None) => right.get.matches(f)
             case T(f, None) => right.get.matches(f)
@@ -144,9 +144,9 @@ case class T(left: F, right: Option[T2]) extends S {
           }
         } else { // left is optional, everything in right is optional
           input match {
-            case t@T2(f, Some(t2)) =>
+            case t@T2(_, Some(_)) =>
               left.matches(t) || right.get.matches(t) || thisT2.traverseMatch(None, Some(t))
-            case t@T(f, Some(t2)) =>
+            case t@T(_, Some(_)) =>
               left.matches(t) || right.get.matches(t) || thisT2.traverseMatch(None, Some(T2(t.left, t.right)))
             case T2(f, None) => left.matches(f) || right.get.matches(f)
             case T(f, None) => left.matches(f) || right.get.matches(f)
@@ -183,9 +183,9 @@ case class T2(left: F, right: Option[T2]) extends S {
           }
         } else { // left is required, right terms are all optional
           input match {
-            case t@T2(f, Some(t2)) =>
+            case t@T2(_, Some(_)) =>
               left.matches(t) || this.traverseMatch(None, Some(t))
-            case t@T(f, Some(t2)) =>
+            case t@T(_, Some(_)) =>
               left.matches(t) || this.traverseMatch(None, Some(T2(t.left, t.right)))
             case T2(f, None) => left.matches(f)
             case T(f, None) => left.matches(f)
@@ -197,9 +197,9 @@ case class T2(left: F, right: Option[T2]) extends S {
       } else { // left is optional
         if (right.get.required) { // something in right is required
           input match {
-            case t@T2(f, Some(t2)) =>
+            case t@T2(_, Some(_)) =>
               right.get.matches(t) || this.traverseMatch(None, Some(t))
-            case t@T(f, Some(t2)) =>
+            case t@T(_, Some(_)) =>
               right.get.matches(t) || this.traverseMatch(None, Some(T2(t.left, t.right)))
             case T2(f, None) => right.get.matches(f)
             case T(f, None) => right.get.matches(f)
@@ -209,9 +209,9 @@ case class T2(left: F, right: Option[T2]) extends S {
           }
         } else { // left is optional, everything in right is optional
           input match {
-            case t@T2(f, Some(t2)) =>
+            case t@T2(_, Some(_)) =>
               left.matches(t) || right.get.matches(t) || this.traverseMatch(None, Some(t))
-            case t@T(f, Some(t2)) =>
+            case t@T(_, Some(_)) =>
               left.matches(t) || right.get.matches(t) || this.traverseMatch(None, Some(T2(t.left, t.right)))
             case T2(f, None) => left.matches(f) || right.get.matches(f)
             case T(f, None) => left.matches(f) || right.get.matches(f)
